@@ -409,7 +409,7 @@ function exportBackupData() {
   });
 }
 
-// Function to handle backup to S3 with chunked multipart upload
+// Function to handle backup to S3 with chunked multipart upload using Blob
 async function backupToS3() {
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
@@ -428,70 +428,83 @@ async function backupToS3() {
 
   const data = await exportBackupData();
   const dataStr = JSON.stringify(data);
-  const dataSize = Buffer.byteLength(dataStr); // Calculate the full size of the data
-  const chunkSize = 10 * 1024 * 1024; // 10MB chunk size
+  const blob = new Blob([dataStr], { type: "application/json" });
+  const dataSize = blob.size;
+  const chunkSize = 10 * 1024 * 1024;
 
   const s3 = new AWS.S3();
-  const params = {
-    Bucket: bucketName,
-    Key: "typingmind-backup.json",
-  };
 
-  if (dataSize > chunkSize) { 
-    // UPDATED: Use multipart upload if dataSize is larger than chunk size
+  if (dataSize > chunkSize) {
     const createMultipartParams = {
       Bucket: bucketName,
       Key: "typingmind-backup.json",
     };
-    
-    // Initiate multipart upload
+
     const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
     const promises = [];
-    const buffer = Buffer.from(dataStr); // Convert data to buffer for chunking
-    
-    // Split the file into chunks and upload individual parts
-    for (let partNumber = 0; partNumber * chunkSize < dataSize; partNumber++) {
-      const start = partNumber * chunkSize;
+
+    let partNumber = 1;
+    let start = 0;
+
+    while (start < dataSize) {
       const end = Math.min(start + chunkSize, dataSize);
-      const partParams = {
-        Body: buffer.slice(start, end),
-        Bucket: bucketName,
-        Key: "typingmind-backup.json",
-        PartNumber: partNumber + 1,
-        UploadId: multipart.UploadId,
-      };
-      promises.push(s3.uploadPart(partParams).promise());
+      const chunkBlob = blob.slice(start, end);
+
+      const partPromise = new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const partParams = {
+            Body: event.target.result,
+            Bucket: bucketName,
+            Key: "typingmind-backup.json",
+            PartNumber: partNumber,
+            UploadId: multipart.UploadId
+          };
+
+          try {
+            const result = await s3.uploadPart(partParams).promise();
+            resolve({ ETag: result.ETag, PartNumber: partNumber });
+          } catch (err) {
+            reject(err);
+          }
+
+          partNumber++;
+        };
+
+        reader.onerror = (error) => {
+          reject(error);
+        };
+
+        reader.readAsArrayBuffer(chunkBlob);
+      });
+
+      promises.push(partPromise);
+      start = end;
     }
 
-    // Wait for all parts to finish uploading
     const uploadedParts = await Promise.all(promises);
 
-    // Complete the multipart upload 
     const completeParams = {
       Bucket: bucketName,
       Key: "typingmind-backup.json",
       UploadId: multipart.UploadId,
       MultipartUpload: {
-        Parts: uploadedParts.map((part, i) => ({
-          ETag: part.ETag,
-          PartNumber: i + 1,
-        })),
+        Parts: uploadedParts,
       },
     };
     await s3.completeMultipartUpload(completeParams).promise();
 
   } else {
-    // Single PUT object for smaller files
     const putParams = {
-      ...params,
-      Body: dataStr, // The data to upload
+      Bucket: bucketName,
+      Key: "typingmind-backup.json",
+      Body: dataStr,
       ContentType: "application/json",
     };
 
-    await s3.putObject(putParams).promise(); // Use single put request for small files
+    await s3.putObject(putParams).promise();
   }
 
-  // After successful upload
   const currentTime = new Date().toLocaleString();
   localStorage.setItem("last-cloud-sync", currentTime);
   var element = document.getElementById("last-sync-msg");
