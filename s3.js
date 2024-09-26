@@ -437,6 +437,13 @@ async function backupToS3() {
   if (isExportInProgress) return;
   isExportInProgress = true;
 
+  const uploadParams = {
+    Bucket: bucketName,
+    Key: dataFileName,
+    Body: dataStr,
+    ContentType: 'application/json'
+  };
+
   try {
     const managedUpload = s3.upload(uploadParams, {
       partSize: 10 * 1024 * 1024,
