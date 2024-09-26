@@ -600,7 +600,7 @@ async function validateAwsCredentials(bucketName, accessKey, secretKey) {
   });
 }
 
-// Function to create a dated backup copy and purge old backups
+// Function to create a dated backup copy, zip it, and purge old backups
 async function handleBackupFiles() {
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
@@ -622,7 +622,7 @@ async function handleBackupFiles() {
     Bucket: bucketName,
     Prefix: "typingmind-backup.json",
   };
-  
+
   const today = new Date();
   const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
 
@@ -631,28 +631,38 @@ async function handleBackupFiles() {
       console.error("Error listing S3 objects:", err);
       return;
     }
-    
     if (data.Contents.length > 0) {
       const lastModified = data.Contents[0].LastModified;
       const lastModifiedDate = new Date(lastModified);
-
-      // Check if the last modified date is older than today to create a new backup
       if (lastModifiedDate.setHours(0, 0, 0, 0) < today.setHours(0, 0, 0, 0)) {
-        const copyParams = {
+        const getObjectParams = {
           Bucket: bucketName,
-          CopySource: `${bucketName}/typingmind-backup.json`,
-          Key: `typingmind-backup-${currentDateSuffix}.json`,
+          Key: 'typingmind-backup.json'
         };
-        await s3.copyObject(copyParams).promise();
+        const backupFile = await s3.getObject(getObjectParams).promise();
+        const backupContent = backupFile.Body;
+        const jszip = new JSZip();
+        jszip.file(`typingmind-backup-${currentDateSuffix}.json`, backupContent);
+        const compressedContent = await jszip.generateAsync({ type: "nodebuffer" });
+        const zipKey = `typingmind-backup-${currentDateSuffix}.zip`;
+        const uploadParams = {
+          Bucket: bucketName,
+          Key: zipKey,
+          Body: compressedContent,
+          ContentType: 'application/zip'
+        };
+        await s3.putObject(uploadParams).promise();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
 
       // Purge backups older than 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(today.getDate() - 30);
-
       for (const file of data.Contents) {
-        if (file.Key.endsWith('.json') && file.Key !== "typingmind-backup.json") {
+        if (
+          (file.Key.endsWith('.json') || file.Key.endsWith('.zip')) && 
+          file.Key !== "typingmind-backup.json"
+        ) {
           const fileDate = new Date(file.LastModified);
           if (fileDate < thirtyDaysAgo) {
             const deleteParams = {
