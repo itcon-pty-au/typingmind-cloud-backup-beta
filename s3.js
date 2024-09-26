@@ -101,10 +101,6 @@ function openSyncModal() {
                                     <label for="aws-secret-key" class="block text-sm font-medium text-gray-700 dark:text-gray-400">AWS Secret Key</label>
                                     <input id="aws-secret-key" name="aws-secret-key" type="password" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
                                 </div>
-                                <div>
-														        <label for="backup-interval" class="block text-sm font-medium text-gray-700 dark:text-gray-400">Backup Interval (min)</label>
-														        <input id="backup-interval" name="backup-interval" type="number" step="0.01" min="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm dark:bg-zinc-700" autocomplete="off" required>
-														    </div>
                                 <div class="flex justify-between space-x-2">
                                     <button id="save-aws-details-btn" type="button" class="inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-gray-400 disabled:cursor-default transition-colors" disabled>
                                         Save
@@ -138,8 +134,6 @@ function openSyncModal() {
   const awsRegionInput = document.getElementById("aws-region");
   const awsAccessKeyInput = document.getElementById("aws-access-key");
   const awsSecretKeyInput = document.getElementById("aws-secret-key");
-  const backupIntervalInput = document.getElementById("backup-interval");
-	const savedBackupInterval = localStorage.getItem("backup-interval");
   const savedBucket = localStorage.getItem("aws-bucket");
   const savedRegion = localStorage.getItem("aws-region");
   const savedAccessKey = localStorage.getItem("aws-access-key");
@@ -150,7 +144,6 @@ function openSyncModal() {
   if (savedRegion) awsRegionInput.value = savedRegion;
   if (savedAccessKey) awsAccessKeyInput.value = savedAccessKey;
   if (savedSecretKey) awsSecretKeyInput.value = savedSecretKey;
-  if (savedBackupInterval) backupIntervalInput.value = savedBackupInterval;
   const currentTime = new Date().toLocaleString();
   var element = document.getElementById("last-sync-msg");
   if (lastSync) {
@@ -165,9 +158,7 @@ function openSyncModal() {
       !awsBucketInput.value.trim() ||
       !awsRegionInput.value.trim() ||
       !awsAccessKeyInput.value.trim() ||
-      !awsSecretKeyInput.value.trim() ||
-      !backupIntervalInput.value.trim() ||
-      parseFloat(backupIntervalInput.value) <= 0;
+      !awsSecretKeyInput.value.trim();
     document.getElementById("export-to-s3-btn").disabled = isDisabled;
     document.getElementById("import-from-s3-btn").disabled = isDisabled;
     document.getElementById("save-aws-details-btn").disabled = isDisabled;
@@ -183,7 +174,6 @@ function openSyncModal() {
   awsRegionInput.addEventListener("input", updateButtonState);
   awsAccessKeyInput.addEventListener("input", updateButtonState);
   awsSecretKeyInput.addEventListener("input", updateButtonState);
-  backupIntervalInput.addEventListener("input", updateButtonState);
 
   updateButtonState();
 
@@ -215,14 +205,9 @@ function openSyncModal() {
     const region = awsRegionInput.value.trim();
     const accessKey = awsAccessKeyInput.value.trim();
     const secretKey = awsSecretKeyInput.value.trim();
-    const backupInterval = parseFloat(backupIntervalInput.value.trim());
   
     try {
       await validateAwsCredentials(bucketName, accessKey, secretKey);
-      if (backupInterval <= 0) {
-        throw new Error("Backup interval must be greater than 0");
-    	}
-    	localStorage.setItem("backup-interval", backupInterval);
       localStorage.setItem("aws-bucket", bucketName);
       localStorage.setItem("aws-region", region);
       localStorage.setItem("aws-access-key", accessKey);
@@ -351,6 +336,18 @@ async function checkAndImportBackup() {
   return false;
 }
 
+// Function to start the backup interval
+function startBackupInterval() {
+  clearInterval(backupInterval);
+  backupInterval = setInterval(async () => {
+    if (wasImportSuccessful && !isExportInProgress) {
+      isExportInProgress = true;
+      await backupToS3();
+      isExportInProgress = false;
+    }
+  }, 5000);
+}
+
 // Function to load AWS SDK asynchronously
 async function loadAwsSdk() {
   return new Promise((resolve, reject) => {
@@ -412,7 +409,7 @@ function exportBackupData() {
   });
 }
 
-// Function to handle backup to S3
+// Function to handle backup to S3 with chunked multipart upload
 async function backupToS3() {
   const bucketName = localStorage.getItem("aws-bucket");
   const awsRegion = localStorage.getItem("aws-region");
@@ -431,51 +428,77 @@ async function backupToS3() {
 
   const data = await exportBackupData();
   const dataStr = JSON.stringify(data);
-  const dataFileName = "typingmind-backup.json";
-  const s3 = new AWS.S3();
-  clearInterval(backupInterval);
-  if (isExportInProgress) return;
-  isExportInProgress = true;
+  const dataSize = Buffer.byteLength(dataStr); // Calculate the full size of the data
+  const chunkSize = 10 * 1024 * 1024; // 10MB chunk size
 
-  const uploadParams = {
+  const s3 = new AWS.S3();
+  const params = {
     Bucket: bucketName,
-    Key: dataFileName,
-    Body: dataStr,
-    ContentType: 'application/json'
+    Key: "typingmind-backup.json",
   };
 
-  try {
-    const managedUpload = s3.upload(uploadParams, {
-      partSize: 10 * 1024 * 1024,
-      queueSize: 1,
-    });
-    await managedUpload.promise();
-    const currentTime = new Date().toLocaleString();
-    localStorage.setItem("last-cloud-sync", currentTime);
-    const element = document.getElementById("last-sync-msg");
-    if (element !== null) {
-      element.innerText = `Last sync done at ${currentTime}`;
+  if (dataSize > chunkSize) { 
+    // UPDATED: Use multipart upload if dataSize is larger than chunk size
+    const createMultipartParams = {
+      Bucket: bucketName,
+      Key: "typingmind-backup.json",
+    };
+    
+    // Initiate multipart upload
+    const multipart = await s3.createMultipartUpload(createMultipartParams).promise();
+    const promises = [];
+    const buffer = Buffer.from(dataStr); // Convert data to buffer for chunking
+    
+    // Split the file into chunks and upload individual parts
+    for (let partNumber = 0; partNumber * chunkSize < dataSize; partNumber++) {
+      const start = partNumber * chunkSize;
+      const end = Math.min(start + chunkSize, dataSize);
+      const partParams = {
+        Body: buffer.slice(start, end),
+        Bucket: bucketName,
+        Key: "typingmind-backup.json",
+        PartNumber: partNumber + 1,
+        UploadId: multipart.UploadId,
+      };
+      promises.push(s3.uploadPart(partParams).promise());
     }
-  } catch (err) {
-    console.error(`Error uploading data: ${err.message}`);
-  } finally {
-    isExportInProgress = false;
-    startBackupInterval();
-  }
-}
 
-// Function to start the backup interval
-function startBackupInterval() {
-    clearInterval(backupInterval);
-    const intervalMinutes = parseFloat(localStorage.getItem("backup-interval") || "1");
-    const intervalMilliseconds = intervalMinutes * 60 * 1000;
-    backupInterval = setInterval(async () => {
-        if (wasImportSuccessful && !isExportInProgress) {
-            isExportInProgress = true;
-            await backupToS3();
-            isExportInProgress = false;
-        }
-    }, intervalMilliseconds);
+    // Wait for all parts to finish uploading
+    const uploadedParts = await Promise.all(promises);
+
+    // Complete the multipart upload 
+    const completeParams = {
+      Bucket: bucketName,
+      Key: "typingmind-backup.json",
+      UploadId: multipart.UploadId,
+      MultipartUpload: {
+        Parts: uploadedParts.map((part, i) => ({
+          ETag: part.ETag,
+          PartNumber: i + 1,
+        })),
+      },
+    };
+    await s3.completeMultipartUpload(completeParams).promise();
+
+  } else {
+    // Single PUT object for smaller files
+    const putParams = {
+      ...params,
+      Body: dataStr, // The data to upload
+      ContentType: "application/json",
+    };
+
+    await s3.putObject(putParams).promise(); // Use single put request for small files
+  }
+
+  // After successful upload
+  const currentTime = new Date().toLocaleString();
+  localStorage.setItem("last-cloud-sync", currentTime);
+  var element = document.getElementById("last-sync-msg");
+  if (element !== null) {
+    element.innerText = `Last sync done at ${currentTime}`;
+  }
+  startBackupInterval();
 }
 
 // Function to handle import from S3
