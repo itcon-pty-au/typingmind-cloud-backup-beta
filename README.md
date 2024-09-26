@@ -1,6 +1,6 @@
 #### WARNING - THIS IS THE BETA VERSION OF THE EXTENSION AND MAY HAVE OPEN ISSUES
 
-# TypingMind S3 Backup Extension
+# TypingMind S3 Backup Extension [BETA]
 
 [If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
