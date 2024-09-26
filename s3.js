@@ -1,26 +1,37 @@
-// Handle page load
-const checkDOMLoaded = setInterval(async () => {
-  if (document.readyState === "complete" && wasImportSuccessful !== true) {
-    clearInterval(checkDOMLoaded);
-    var importSuccessful = await checkAndImportBackup();
-    const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
-    const today = new Date();
-    const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
-    const currentTime = new Date().toLocaleString();
-    const lastSync = localStorage.getItem("last-cloud-sync");
-    var element = document.getElementById("last-sync-msg");
-    if (lastSync && importSuccessful) {
-      if (element !== null) {
-        element.innerText = `Last sync done at ${currentTime}`;
-        element = null;
-      }
-      if (!storedSuffix || currentDateSuffix > storedSuffix) {
-        await handleBackupFiles();
-      }
-      startBackupInterval();
-    }
+let backupIntervalRunning = false;
+
+(async function checkDOMOrRunBackup() {
+  if (document.readyState === "complete") {
+    await handleDOMReady();
+  } else {
+    window.addEventListener('load', handleDOMReady);
   }
-}, 5000);
+})();
+
+async function handleDOMReady() {
+  window.removeEventListener('load', handleDOMReady);
+
+  var importSuccessful = await checkAndImportBackup();
+  const storedSuffix = localStorage.getItem("last-daily-backup-in-s3");
+  const today = new Date();
+  const currentDateSuffix = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`;
+  const currentTime = new Date().toLocaleString();
+  const lastSync = localStorage.getItem("last-cloud-sync");
+  var element = document.getElementById("last-sync-msg");
+
+  if (lastSync && importSuccessful) {
+    if (element !== null) {
+      element.innerText = `Last sync done at ${currentTime}`;
+      element = null;
+    }
+    if (!storedSuffix || currentDateSuffix > storedSuffix) {
+      await handleBackupFiles();
+    }
+    startBackupInterval();
+  } else if (!backupIntervalRunning) {
+    startBackupInterval();
+  }
+}
 
 // Create a new button
 const cloudSyncBtn = document.createElement('button');
@@ -51,7 +62,6 @@ cloudSyncBtn.addEventListener("click", function () {
 });
 
 // New Popup
-let wasImportSuccessful = false;
 let lastBackupTime = 0;
 let isExportInProgress = false;
 let backupInterval;
@@ -270,6 +280,7 @@ document.addEventListener("visibilitychange", async () => {
     const currentTime = new Date().toLocaleString();
     const lastSync = localStorage.getItem("last-cloud-sync");
     var element = document.getElementById("last-sync-msg");
+
     if (lastSync && importSuccessful) {
       if (element !== null) {
         element.innerText = `Last sync done at ${currentTime}`;
@@ -279,10 +290,10 @@ document.addEventListener("visibilitychange", async () => {
         await handleBackupFiles();
         localStorage.setItem("last-daily-backup-in-s3", currentDateSuffix);
       }
-      startBackupInterval();
+      if (!backupIntervalRunning) {
+        startBackupInterval();
+      }
     }
-  } else {
-    clearInterval(backupInterval);
   }
 });
 
@@ -338,7 +349,9 @@ async function checkAndImportBackup() {
 
 // Function to start the backup interval
 function startBackupInterval() {
+  if (backupIntervalRunning) return; 
   clearInterval(backupInterval);
+  backupIntervalRunning = true;
   backupInterval = setInterval(async () => {
     if (wasImportSuccessful && !isExportInProgress) {
       isExportInProgress = true;
