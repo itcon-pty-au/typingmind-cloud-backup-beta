@@ -1,13 +1,17 @@
-#### WARNING - THIS IS THE BETA VERSION OF THE EXTENSION AND MAY HAVE OPEN ISSUES
+#### WARNING - THIS IS THE BETA VERSION OF THE EXTENSION AND MAY NOT BE STABLE
 
 # TypingMind S3 Backup Extension [BETA]
 
 [If you found this useful, please consider buying me a coffee](https://buymeacoffee.com/itcon):heart:!
 
 ## Features
-- Extension to enable automatic backup & restore of app data to S3.
+- Extension to enable automatic backup & restore of app data to S3. (Full backup, not incremental)
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
 - Enables automatic backing up of your TypingMind data to S3 throughout the session.
+
+## New in Beta
+- Last 30 days 'backup of backup' for a stress free experience.
+- Ability to specify backup interval
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
