@@ -6,23 +6,24 @@
 
 ## Features
 - Extension to enable automatic backup & restore of app data to S3. (Full backup, not incremental)
+- A single backup file in S3 is maintained as the backup for your typingmind instance. This file is overwritten each time a backup is written to S3.
 - Automatically restores the latest backup version from S3 to your TypingMind instance when you first open the app (provided a backup exists).
-- Enables automatic backing up of your TypingMind data to S3 throughout the session.
+- Enables automatic backing up of your TypingMind data to S3 throughout the session as per backup interval configured.
 
-## New in Beta
-- Last 30 days 'backup of backup' for a stress free experience.
-- Ability to specify backup interval
+## New features implemented in [Beta Repo](https://github.com/itcon-pty-au/typingmind-cloud-backup-beta)
+- Last 30 days 'backup of backup' for a stress free experience. Apart from the single backup file, the extension now creates a daily 'no-touch' zipped backup of the main backup file. In case the main backup file gets corrupted, you can restore it using the previous day's backup!
+- Added the bility to specify backup interval
   
 ## Using this extension
 WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXPORT" before setting up the extension.
-1. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup-beta/s3.js" into Menu > Preferences > Extension in Typingmind.
+1. Load "https://itcon-pty-au.github.io/typingmind-cloud-backup/s3.js" into Menu > Preferences > Extension in Typingmind.
 2. Once the extension is installed, a new Backup button will be added to the menu. Clicking on this will bring up the S3 backup configuration form.
 3. Provide the AWS details in the form. [These are stored locally in your browser]
 4. The save button checks if there is a backup already in S3, if yes it restores it and updates the local typingmind instance.
 5. Manually refresh the page to reflect the new data. CTRL + F5 if it does not.
-4. If there is no backup in S3, it is expected that you do an adhoc "Export to S3" to kickstart the process.
-3. You can do adhoc cloud backups and restore using the respective buttons in the form - "Export to S3" and "Import from S3".
-4. When the local data is changed, the extension triggers a backup to S3 automatically. However, these calls are capped at 1 every 5 seconds.
+4. If there is no backup in S3, it is expected that you click on the "Export to S3" button in the configuration form to kickstart the backup process.
+3. You can do on demand cloud backups and restore using the respective buttons in the form - "Export to S3" and "Import from S3".
+4. Full backup to S3 is performed as per the backup interval configured. 
 
 ## AWS Config
 1. Create a user in Amazon IAM. In permissions option, select "Add user to group" but don't select any group. In next screen, "Create user".
