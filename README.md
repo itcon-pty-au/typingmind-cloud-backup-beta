@@ -42,7 +42,8 @@ WARNING: Ensure you take a local backup from "SETTINGS > APPDATA & STORAGE > EXP
             "Action": [
                 "s3:ListBucket",
                 "s3:GetObject",
-                "s3:PutObject"
+                "s3:PutObject",
+                "s3:DeleteObject"
             ],
             "Resource": [
                 "arn:aws:s3:::<AWS bucket name>",
@@ -65,7 +66,8 @@ Update AWS Account ID, IAM username and AWS bucket name in the policy with your 
             "HEAD",
             "GET",
             "PUT",
-            "POST"
+            "POST",
+            "DELETE"
         ],
         "AllowedOrigins": [
             "https://*.hostname.com"
@@ -88,7 +90,8 @@ If you are using typingcloud, use the below
             "HEAD",
             "GET",
             "PUT",
-            "POST"
+            "POST",
+            "DELETE"
         ],
         "AllowedOrigins": [
             "https://www.typingmind.com"
